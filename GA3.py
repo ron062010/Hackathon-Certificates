@@ -44,6 +44,10 @@ vms = [
     },
 ]
 
+def tab(jobs):
+    return tabulate(jobs, headers="keys", tablefmt='grid')
+
+
 def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover_rate):
     num_jobs = len(jobs)
     num_vms = len(vms)
@@ -86,6 +90,7 @@ def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover
 
         #In below for loop, AFTER the VM is assigned to a job, we check their compatibility and 
         # calculate the fitness value of the chromosome.
+        #breakpoint()
         for vm_id, assigned_jobs in vm_job_mapping.items():
             assigned_jobs.sort(key=lambda job: job["Priority"], reverse=True)
 
@@ -97,8 +102,6 @@ def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover
                 instruction_count = job["EIC"]
                 deadline = job["Deadline"]
                 delay_cost = job["Delay_Cost"]
-                cpu_requested_by_job = job["CPU_Requested"]
-                memory_requested_by_job = job["Memory_Requested"]
 
                 vm = [v for v in vms if v["VM_ID"] == vm_id][0]
 
@@ -184,7 +187,7 @@ def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover
         return child1, child2
 
     #Change the assigned VM randomly based on mutation rate.
-    def mutate(chromosome, num_vms, mutation_rate=0.01):
+    def mutate(chromosome, num_vms, mutation_rate):
         for i in range(len(chromosome)):
             if random.random() < mutation_rate:
                 chromosome[i] = random.randint(0, num_vms - 1)
@@ -193,6 +196,7 @@ def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover
     #Initialize Population
     population = initialize_population(pop_size, num_jobs, num_vms)
     
+    #breakpoint()
     #Fitness scores of each population
     fitness_scores = [fitness_function(chromosome, jobs, vms)[0] for chromosome in population]
 
@@ -258,13 +262,23 @@ def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover
         waiting_time = max(0, start_time - job["Arrival_Time"])
         cost = job["EIC"] * vm["Cost_Per_Instruction"]
         energy = job["EIC"] * vm["Energy_Consumed_Per_Instruction"]
+        priority = job['Priority']
 
         vm_jobs[vm["VM_ID"]].append({
             "Job_ID": job["Job_ID"],
+            "Priority" : priority,
+            'Arrival_Time': job["Arrival_Time"],
             "Start_Time": round(start_time, 2),
             "End_Time": round(end_time, 2),
             "Waiting_Time": round(waiting_time, 2),
             "Cost": round(cost, 2),
+            'EIC': job["EIC"],
+            'Deadline': job["Deadline"],
+            'Delay_Cost': job["Delay_Cost"],
+            'Type_of_Service': job["Type_of_Service"],
+            'Job_Type': job["Job_Type"],
+            "CPU_Requested": job["CPU_Requested"],
+            "Memory_Requested": job["Memory_Requested"]
         })
 
         vm_costs[vm["VM_ID"]] += cost
@@ -326,72 +340,86 @@ def genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover
     return vm_jobs, vm_idle_times, vm_costs, failed_jobs, total_duration, best_fitness_over_time, vm_energy, vm_waiting_times, rescheduled_jobs
 
 # Parameters
-pop_size = 18
-generations = 300
-mutation_rate = 0.03
-crossover_rate = 0.9
+params = {
+    'population_size': [10, 20, 30],
+    'generations': [100, 150, 200, 250, 300],
+    'mutation_rate': [0.01, 0.015, 0.02, 0.025, 0.03, 0.035],
+    'crossover_rate': [0.5, 0.6, 0.7, 0.8]
+}
+#pop_size = 10
+#generations = 150
+#mutation_rate = 0.04
+#crossover_rate = 0.7
 
-#breakpoint()
-# Run the Genetic Algorithm
-vm_jobs, vm_idle_times, vm_costs, failed_jobs, total_duration, best_fitness_over_time, vm_energy, vm_waiting_times, rescheduled_jobs = genetic_algorithm(
-    jobs, vms, pop_size, generations, mutation_rate, crossover_rate
-)
+for pop_size in params["population_size"]:
+    for generations in params['generations']:
+        for mutation_rate in params["mutation_rate"]:
+            for crossover_rate in params['crossover_rate']:
 
-# Save results
-with open('C:\\Users\\HP\\Desktop\\output_table.txt', 'w') as file:
+                # Run the Genetic Algorithm
+                vm_jobs_output, vm_idle_times, vm_costs, failed_jobs, total_duration, best_fitness_over_time, vm_energy, vm_waiting_times, rescheduled_jobs = genetic_algorithm(jobs, vms, pop_size, generations, mutation_rate, crossover_rate)
+                print(pop_size, generations, mutation_rate, crossover_rate)
+                
+                print(f'Saving results for Population- {pop_size}, Generations- {generations}, Mutation Rate- {mutation_rate}, Crossover Rate- {crossover_rate}')
+                # Save results
+                with open(f'C:\\Users\\HP\\Desktop\\PLT_Results\\{pop_size}_{generations}_{mutation_rate}_{crossover_rate}.txt', 'w') as file:
 
-    #VM wise details
-    for vm_id, jobs in vm_jobs.items():
-        vm_id_str = f"\n Number of jobs assigned to {vm_id}: {len(jobs)}\n"
-        vm_schedule_str = tabulate(jobs, headers="keys", tablefmt='grid')
+                    #VM wise details
+                    job_cols_to_print = ["Job_ID","Start_Time","End_Time","Waiting_Time", "Cost"]
+                    
+                    for vm_id, jobs in vm_jobs_output.items():
+                            job_filtered_data = [{col: row[col] for col in job_cols_to_print} for row in jobs]
+                
+                            vm_id_str = f"\n Number of jobs assigned to {vm_id}: {len(jobs)}\n"
+                            vm_schedule_str = tab(job_filtered_data)
 
-        file.write(vm_id_str)
-        file.write(vm_schedule_str)
-        file.write('\n')
+                            file.write(vm_id_str)
+                            file.write(vm_schedule_str)
+                            file.write('\n')
 
-    #Failed jobs result
-    cols_to_print = ["Job_ID", "Job_Type", "Deadline", "CPU_Requested", "Memory_Requested", "Failure_Reason"]
-    filtered_data = [{col: row[col] for col in cols_to_print} for row in failed_jobs]
-    filtered_data.sort(key=lambda x: x['Job_ID'])
-    f1 = f"\n Failed Jobs Details:\n Total Jobs Failed: {len(filtered_data)}\n"
-    failed_jobs_str = tabulate(filtered_data, headers="keys", tablefmt='grid')
-    file.write(f1)
-    file.write(failed_jobs_str)
-    file.write('\n')
+                    #Failed jobs result
+                    cols_to_print = ["Job_ID", "Job_Type", "Deadline", "CPU_Requested", "Memory_Requested", "Failure_Reason"]
+                    filtered_data = [{col: row[col] for col in cols_to_print} for row in failed_jobs]
+                    filtered_data.sort(key=lambda x: x['Job_ID'])
+                    f1 = f"\n Failed Jobs Details:\n Total Jobs Failed: {len(filtered_data)}\n"
+                    failed_jobs_str = tabulate(filtered_data, headers="keys", tablefmt='grid')
+                    file.write(f1)
+                    file.write(failed_jobs_str)
+                    file.write('\n')
 
-    rescheduled_jobs_str = tabulate(rescheduled_jobs, headers="keys", tablefmt='grid')
-    file.write("\nRescheduled Jobs Details:\n")
-    file.write(rescheduled_jobs_str)
-    file.write('\n')
+                    rescheduled_jobs_str = tabulate(rescheduled_jobs, headers="keys", tablefmt='grid')
+                    file.write("\nRescheduled Jobs Details:\n")
+                    file.write(rescheduled_jobs_str)
+                    file.write('\n')
 
-    #VM Summary
-    file.write("\nVM Summary:\n")
-    vm_detais_str = tabulate(
-            [
-                {
-                    "VM": vm_id,
-                    "Idle_Time": round(idle_time, 2),
-                    "Cost": round(vm_costs[vm_id], 2),
-                    "Energy_Spent": round(vm_energy[vm_id], 2),
-                    "Avg_Waiting_Time": round(vm_waiting_times[vm_id], 2),
-                }
-                for vm_id, idle_time in vm_idle_times.items()
-            ],
-            headers="keys", tablefmt='grid'
-        )
-    file.write(vm_detais_str)
-    file.write('\n')
+                    #VM Summary
+                    file.write("\nVM Summary:\n")
+                    vm_detais_str = tabulate(
+                            [
+                                {
+                                    "VM": vm_id,
+                                    "Idle_Time": round(idle_time, 2),
+                                    "Cost": round(vm_costs[vm_id], 2),
+                                    "Energy_Spent": round(vm_energy[vm_id], 2),
+                                    "Avg_Waiting_Time": round(vm_waiting_times[vm_id], 2),
+                                }
+                                for vm_id, idle_time in vm_idle_times.items()
+                            ],
+                            headers="keys", tablefmt='grid'
+                        )
+                    file.write(vm_detais_str)
+                    file.write('\n')
 
-    schedule_duration_str = f"\nTotal Schedule Duration: {round(total_duration, 2)} seconds"
-    file.write(schedule_duration_str)
-    file.write('\n')
+                    schedule_duration_str = f"\nTotal Schedule Duration: {round(total_duration, 2)} seconds"
+                    file.write(schedule_duration_str)
+                    file.write('\n')
 
 
 
-plt.figure(figsize=(10, 6))
-plt.plot([-fitness for fitness in best_fitness_over_time], marker="o", color="blue")
-plt.title("Genetic Algorithm Convergence")
-plt.xlabel("Generation")
-plt.ylabel("Best Fitness Score")
-plt.grid(True)
-plt.show()
+                    plt.figure(figsize=(10, 6))
+                    plt.plot([-fitness for fitness in best_fitness_over_time], marker="o", color="blue")
+                    plt.title("Genetic Algorithm Convergence")
+                    plt.xlabel("Generation")
+                    plt.ylabel("Best Fitness Score")
+                    plt.grid(True)
+                    plt.savefig(f"C:\\Users\\HP\\Desktop\\PLT_Results\\{pop_size}_{generations}_{mutation_rate}_{crossover_rate}.png")
